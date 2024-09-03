@@ -1,0 +1,175 @@
+import tkinter as tk
+from tkinter import messagebox
+import sqlite3
+from datetime import datetime
+
+# Conexão com o banco de dados SQLite
+conn = sqlite3.connect('orders.db')
+c = conn.cursor()
+
+# Criação da tabela de ordens de serviço
+c.execute('''CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY,
+                activity TEXT NOT NULL,
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                observation TEXT,
+                status TEXT DEFAULT 'pending',
+                server_name TEXT,
+                server_observation TEXT,
+                completion_date TEXT,
+                completion_time TEXT
+            )''')
+conn.commit()
+
+# Funções para a interface gráfica
+def login():
+    user_type = user_type_var.get()
+    if user_type == "Administrador":
+        open_admin_login_window()
+    elif user_type == "Servidor":
+        open_server_window()
+    else:
+        messagebox.showerror("Erro", "Por favor, selecione um tipo de usuário")
+
+def open_admin_login_window():
+    admin_login_window = tk.Toplevel(app)
+    admin_login_window.title("Login Administrador")
+
+    tk.Label(admin_login_window, text="Senha:").pack()
+    password_entry = tk.Entry(admin_login_window, show='*')
+    password_entry.pack()
+
+    def check_password():
+        password = password_entry.get()
+        if password == "admin123":  # Senha do administrador
+            admin_login_window.destroy()
+            open_main_window("Administrador")
+        else:
+            messagebox.showerror("Erro", "Senha incorreta")
+
+    tk.Button(admin_login_window, text="Entrar", command=check_password).pack()
+
+def open_main_window(user_type):
+    main_window = tk.Toplevel(app)
+    main_window.title("Página Principal")
+
+    if user_type == "Administrador":
+        tk.Button(main_window, text="Criar Ordem de Serviço", command=open_admin_window).pack()
+        tk.Button(main_window, text="Ver Ordens de Serviço", command=open_orders_window).pack()
+    elif user_type == "Servidor":
+        open_server_window()
+
+def open_admin_window():
+    admin_window = tk.Toplevel(app)
+    admin_window.title("Página do Administrador")
+
+    tk.Label(admin_window, text="Atividade:").pack()
+    activity_entry = tk.Entry(admin_window)
+    activity_entry.pack()
+
+    tk.Label(admin_window, text="Data:").pack()
+    date_entry = tk.Entry(admin_window)
+    date_entry.pack()
+
+    tk.Label(admin_window, text="Horário:").pack()
+    time_entry = tk.Entry(admin_window)
+    time_entry.pack()
+
+    tk.Label(admin_window, text="Observação:").pack()
+    observation_entry = tk.Entry(admin_window)
+    observation_entry.pack()
+
+    def create_order():
+        activity = activity_entry.get()
+        date = date_entry.get()
+        time = time_entry.get()
+        observation = observation_entry.get()
+        c.execute("INSERT INTO orders (activity, date, time, observation) VALUES (?, ?, ?, ?)",
+                  (activity, date, time, observation))
+        conn.commit()
+        messagebox.showinfo("Sucesso", "Ordem de serviço criada com sucesso")
+
+    tk.Button(admin_window, text="Criar Ordem de Serviço", command=create_order).pack()
+
+def open_server_window():
+    server_window = tk.Toplevel(app)
+    server_window.title("Página do Servidor")
+
+    tk.Label(server_window, text="Ordens de Serviço Pendentes:").pack()
+
+    orders_listbox = tk.Listbox(server_window)
+    orders_listbox.pack()
+
+    c.execute("SELECT id, activity, date, time FROM orders WHERE status='pending'")
+    orders = c.fetchall()
+    for order in orders:
+        orders_listbox.insert(tk.END, f"ID: {order[0]}, Atividade: {order[1]}, Data: {order[2]}, Horário: {order[3]}")
+
+    def complete_order():
+        selected_order = orders_listbox.get(orders_listbox.curselection())
+        order_id = selected_order.split(",")[0].split(":")[1].strip()
+
+        completion_window = tk.Toplevel(server_window)
+        completion_window.title("Concluir Ordem de Serviço")
+
+        tk.Label(completion_window, text="Nome do Servidor:").pack()
+        server_name_entry = tk.Entry(completion_window)
+        server_name_entry.pack()
+
+        tk.Label(completion_window, text="Observação:").pack()
+        server_observation_entry = tk.Entry(completion_window)
+        server_observation_entry.pack()
+
+        def submit_completion():
+            server_name = server_name_entry.get()
+            server_observation = server_observation_entry.get()
+            completion_date = datetime.now().strftime('%Y-%m-%d')
+            completion_time = datetime.now().strftime('%H:%M')
+            c.execute('''UPDATE orders SET server_name=?, server_observation=?, completion_date=?, completion_time=?, status='completed' WHERE id=?''',
+                      (server_name, server_observation, completion_date, completion_time, order_id))
+            conn.commit()
+            messagebox.showinfo("Sucesso", "Ordem de serviço concluída com sucesso")
+            completion_window.destroy()
+
+        tk.Button(completion_window, text="Enviar", command=submit_completion).pack()
+
+    tk.Button(server_window, text="Concluir Ordem de Serviço", command=complete_order).pack()
+
+def open_orders_window():
+    orders_window = tk.Toplevel(app)
+    orders_window.title("Ordens de Serviço")
+
+    tk.Label(orders_window, text="Ordens de Serviço Concluídas:").pack()
+    completed_orders_listbox = tk.Listbox(orders_window)
+    completed_orders_listbox.pack()
+
+    c.execute("SELECT id, activity, date, time, server_name, completion_date, completion_time FROM orders WHERE status='completed'")
+    completed_orders = c.fetchall()
+    for order in completed_orders:
+        completed_orders_listbox.insert(tk.END, f"ID: {order[0]}, Atividade: {order[1]}, Data: {order[2]}, Horário: {order[3]}, Servidor: {order[4]}, Conclusão: {order[5]} {order[6]}")
+
+    tk.Label(orders_window, text="Ordens de Serviço Pendentes:").pack()
+    pending_orders_listbox = tk.Listbox(orders_window)
+    pending_orders_listbox.pack()
+
+    c.execute("SELECT id, activity, date, time FROM orders WHERE status='pending'")
+    pending_orders = c.fetchall()
+    for order in pending_orders:
+        pending_orders_listbox.insert(tk.END, f"ID: {order[0]}, Atividade: {order[1]}, Data: {order[2]}, Horário: {order[3]}")
+
+# Interface gráfica principal
+app = tk.Tk()
+app.title("Login")
+
+tk.Label(app, text="Selecione o Tipo de Usuário:").pack()
+
+user_type_var = tk.StringVar(value="Selecione")
+tk.OptionMenu(app, user_type_var, "Administrador", "Servidor").pack()
+
+tk.Button(app, text="Entrar", command=login).pack()
+
+app.mainloop()
+
+# Fechar a conexão com o banco de dados ao encerrar o programa
+conn.close()
